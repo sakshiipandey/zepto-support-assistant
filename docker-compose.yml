@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    volumes:
+      # Persist vector store data across container restarts
+      - ./vector_store:/app/vector_store
+      # Mount docs for hot-reload without rebuild
+      - ./docs:/app/docs

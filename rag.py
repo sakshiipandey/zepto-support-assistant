@@ -1,62 +1,46 @@
 
+import os
+import time
+import logging
+
 import chromadb
 from sentence_transformers import SentenceTransformer
 from openai import OpenAI
 from dotenv import load_dotenv
-import os
-import time
 
 load_dotenv()
 
-# Load embedding model only once
+logger = logging.getLogger(__name__)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Load embedding model once at module level
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
-# Connect to ChromaDB
-client = chromadb.PersistentClient(path="vector_store")
+# Connect to ChromaDB using absolute path
+CHROMA_PATH = os.path.join(BASE_DIR, "vector_store")
+client = chromadb.PersistentClient(path=CHROMA_PATH)
+collection = client.get_or_create_collection(name="support_docs")
 
-collection = client.get_collection(
-    name="support_docs"
-)
+# Kie.ai / LLM client configuration
+api_key = os.getenv("KIE_API_KEY") or os.getenv("OPENAI_API_KEY")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.kie.ai/gpt-5-2/v1")
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-5-2")
+MOCK_LLM = os.getenv("MOCK_LLM", "false").lower() in ("true", "1", "yes")
 
-# KIE AI client
-api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    logger.warning("Neither KIE_API_KEY nor OPENAI_API_KEY is set in environment/.env")
 
+# Avoid crashing on import if api_key is None by providing a fallback string
 llm = OpenAI(
-    api_key=api_key,
-    base_url="https://api.kie.ai/gpt-5-2/v1"
+    api_key=api_key or "missing-key",
+    base_url=OPENAI_BASE_URL,
 )
 
 
-def answer_question(question):
-
-    total_start = time.time()
-
-    # Convert question into embedding
-    start = time.time()
-
-    question_embedding = model.encode(
-        [question],
-        show_progress_bar=False
-    )
-
-    print("Embedding time:", round(time.time() - start, 2), "seconds")
-
-    # Search similar chunks
-    start = time.time()
-
-    results = collection.query(
-        query_embeddings=question_embedding.tolist(),
-        n_results=3
-    )
-
-    print("ChromaDB time:", round(time.time() - start, 2), "seconds")
-
-    # Create context
-    context = "\n\n".join(results["documents"][0])
-
-    # Shorter prompt
-    prompt = f"""
-ROLE:
+def _build_prompt(context: str, question: str) -> str:
+    """Build the system prompt for policy-based answers."""
+    return f"""ROLE:
 You are a helpful Zepto customer support assistant.
 
 CONTEXT:
@@ -82,51 +66,93 @@ USER QUESTION:
 {question}
 """
 
-    # Generate answer
-    start = time.time()
 
-    response = llm.chat.completions.create(
-        model="gpt-5-2",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
+def _call_llm(prompt: str, context: str = "") -> str:
+    """Send prompt to Kie.ai LLM with comprehensive error handling and fallback."""
+    # If mock mode is enabled, return a synthesized response without making network calls
+    if MOCK_LLM:
+        logger.info("Mock LLM enabled — synthesizing response without API call")
+        if context:
+            clean_ctx = "\n".join([line for line in context.split("\n") if line.strip() and not line.startswith("SAMPLE POLICY")])
+            return f"Based on Zepto policy:\n{clean_ctx}"
+        return "I am a Zepto support assistant. How can I assist you with your order today?"
+
+    if not api_key:
+        return (
+            "Kie.ai API key is missing. Please set KIE_API_KEY (or OPENAI_API_KEY) "
+            "in your .env file to enable live AI responses."
+        )
+
+    start = time.time()
+    try:
+        response = llm.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        logger.info("Kie.ai LLM time: %.2fs", time.time() - start)
+
+        # Kie.ai can return HTTP 200 with an error object, e.g. {"code": 401, "msg": "..."}
+        # In this scenario, OpenAI SDK parses it into ChatCompletion with choices=None
+        code = getattr(response, "code", None)
+        if code and code != 200:
+            msg = getattr(response, "msg", "Authentication or quota error")
+            logger.error("Kie.ai returned error code %s: %s", code, msg)
+            return f"Kie.ai API Error ({code}): {msg}. Please check your API key in .env."
+
+        choices = getattr(response, "choices", None)
+        if not choices:
+            msg = getattr(response, "msg", None) or "Model did not return choices"
+            logger.error("Kie.ai response missing choices: %s", response)
+            return f"Kie.ai did not return an answer ({msg})."
+
+        content = choices[0].message.content
+        if not content:
+            return "The assistant could not generate an answer."
+
+        return content.strip()
+
+    except Exception as exc:
+        logger.error("Failed to query Kie.ai LLM: %s", exc, exc_info=True)
+        return f"Error connecting to Kie.ai: {str(exc)}"
+
+
+def answer_question(question: str) -> str:
+    """Retrieve relevant chunks from ChromaDB and generate an answer."""
+    total_start = time.time()
+
+    # Embed the question
+    start = time.time()
+    question_embedding = model.encode([question], show_progress_bar=False)
+    logger.info("Embedding time: %.2fs", time.time() - start)
+
+    # Search similar chunks
+    start = time.time()
+    results = collection.query(
+        query_embeddings=question_embedding.tolist(),
+        n_results=3,
     )
+    logger.info("ChromaDB time: %.2fs", time.time() - start)
 
-    print("LLM time:", round(time.time() - start, 2), "seconds")
-    print("Total time:", round(time.time() - total_start, 2), "seconds")
+    docs = results.get("documents", [[]])
+    context = "\n\n".join(docs[0]) if docs and docs[0] else ""
 
-    return response.choices[0].message.content
+    # Generate answer via LLM
+    prompt = _build_prompt(context, question)
+    answer = _call_llm(prompt, context=context)
+    logger.info("Total time: %.2fs", time.time() - total_start)
+
+    return answer
 
 
-def direct_answer(question):
-
-    start = time.time()
-
-    prompt = f"""
-You are a helpful customer support assistant.
+def direct_answer(question: str) -> str:
+    """Answer general questions that don't need RAG retrieval."""
+    prompt = f"""You are a helpful customer support assistant.
 
 Answer this general question politely and briefly.
-
 Do not invent Zepto policy information.
 
 Question:
 {question}
 """
-
-    response = llm.chat.completions.create(
-        model="gpt-5-2",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    )
-
-    print("LLM time:", round(time.time() - start, 2), "seconds")
-
-    return response.choices[0].message.content
+    return _call_llm(prompt)
 

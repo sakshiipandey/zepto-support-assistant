@@ -1,3 +1,5 @@
-.env
 __pycache__/
 *.pyc
+.env
+vector_store/
+*.sqlite3

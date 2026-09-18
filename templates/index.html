@@ -1,103 +1,316 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="emerald">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Zepto Support Assistant</title>
-
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS & DaisyUI (Emerald Theme) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@latest/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
-<body>
+<body class="bg-base-200 font-['Plus_Jakarta_Sans',sans-serif] min-h-screen flex items-center justify-center p-2 sm:p-4 md:p-6 text-base-content antialiased">
+    
+    <!-- Main Chat Window Card -->
+    <div class="card w-full max-w-3xl bg-base-100 shadow-2xl border border-base-300 flex flex-col h-[92vh] max-h-[860px] overflow-hidden rounded-2xl">
+        
+        <!-- Header / Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-200 px-4 sm:px-6 py-3 flex justify-between items-center z-10">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="bg-primary text-primary-content rounded-xl w-10 h-10 shadow-sm flex items-center justify-center">
+                        <span class="text-xl">⚡</span>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="font-bold text-base sm:text-lg text-base-content leading-tight">Zepto Support</h1>
+                        <span class="badge badge-primary badge-sm font-semibold text-[11px]">AI Assistant</span>
+                    </div>
+                    <p class="text-xs text-base-content/60 flex items-center gap-1.5 mt-0.5">
+                        <span class="inline-block w-2 h-2 rounded-full bg-success animate-pulse"></span>
+                        10-Min Delivery Helpdesk &bull; Online
+                    </p>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-1">
+                <button id="clear-btn" class="btn btn-ghost btn-circle btn-sm" onclick="clearChat()" title="Clear Conversation">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70 hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            </div>
+        </header>
 
-    <div class="container">
+        <!-- Message Stream Area -->
+        <main id="chat-box" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 scroll-smooth bg-base-100">
+            
+            <!-- Welcome Card -->
+            <div id="welcome-card" class="card bg-base-200/50 border border-base-300 p-6 text-center my-auto shadow-sm">
+                <div class="w-14 h-14 bg-primary/10 text-primary rounded-2xl flex items-center justify-center mx-auto text-2xl mb-3 shadow-inner">
+                    ⚡
+                </div>
+                <h2 class="font-bold text-lg text-base-content">Welcome to Zepto Customer Care</h2>
+                <p class="text-sm text-base-content/70 max-w-md mx-auto mt-1 mb-5">
+                    Ask any question regarding your deliveries, cancellations, returns, refunds, or membership perks.
+                </p>
+                <div class="text-xs font-bold tracking-wider uppercase text-base-content/50 mb-3">Suggested Topics</div>
+                <div class="flex flex-wrap justify-center gap-2">
+                    <button class="btn btn-outline btn-xs sm:btn-sm rounded-full normal-case font-medium hover:btn-primary transition-all" onclick="handleQuickPrompt('What is the delivery time?')">
+                        ⏱️ Delivery time
+                    </button>
+                    <button class="btn btn-outline btn-xs sm:btn-sm rounded-full normal-case font-medium hover:btn-primary transition-all" onclick="handleQuickPrompt('How do I track my active order?')">
+                        📦 Track order
+                    </button>
+                    <button class="btn btn-outline btn-xs sm:btn-sm rounded-full normal-case font-medium hover:btn-primary transition-all" onclick="handleQuickPrompt('Can I get a refund for a damaged or missing item?')">
+                        💰 Refunds & damaged items
+                    </button>
+                    <button class="btn btn-outline btn-xs sm:btn-sm rounded-full normal-case font-medium hover:btn-primary transition-all" onclick="handleQuickPrompt('Can I cancel my order after checkout?')">
+                        ❌ Order cancellation
+                    </button>
+                    <button class="btn btn-outline btn-xs sm:btn-sm rounded-full normal-case font-medium hover:btn-primary transition-all" onclick="handleQuickPrompt('What are your customer support hours?')">
+                        🕒 Support hours
+                    </button>
+                    <button class="btn btn-outline btn-xs sm:btn-sm rounded-full normal-case font-medium hover:btn-primary transition-all" onclick="handleQuickPrompt('What benefits do I get from membership tiers?')">
+                        ⭐ Membership benefits
+                    </button>
+                </div>
+            </div>
 
-        <h1>Zepto Support Assistant</h1>
+        </main>
 
-        <p class="subtitle">Ask me anything about your order</p>
+        <!-- Input Footer Area (Modern AI Chat App Design) -->
+        <footer class="p-3 sm:p-4 bg-base-100 border-t border-base-200/60">
+            <div class="bg-base-200/50 hover:bg-base-200/70 focus-within:bg-base-100 border border-base-300 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20 rounded-2xl p-2 sm:p-2.5 transition-all duration-200 shadow-sm">
+                <textarea
+                    id="question"
+                    rows="1"
+                    placeholder="Ask anything about your order, delivery, or returns..."
+                    class="w-full bg-transparent border-0 focus:outline-none focus:ring-0 text-sm text-base-content placeholder:text-base-content/45 resize-none py-1.5 px-2 max-h-32 min-h-[38px] leading-relaxed block"
+                    autocomplete="off"
+                ></textarea>
+                
+                <div class="flex items-center justify-between pt-1.5 px-1 border-t border-base-content/5 mt-1">
+                    <div class="flex items-center gap-2 text-xs text-base-content/50">
+                        <span class="badge badge-ghost badge-sm gap-1 text-[11px] font-medium py-2 px-2.5 bg-base-100 border-base-300">
+                            <span class="w-1.5 h-1.5 rounded-full bg-primary inline-block"></span>
+                            AI Agent
+                        </span>
+                        <span class="hidden sm:inline text-[11px] text-base-content/40">
+                            Press Enter ↵ to send &bull; Shift + Enter for new line
+                        </span>
+                    </div>
 
-        <div id="chat-box"></div>
-
-        <div class="input-area">
-            <input
-                type="text"
-                id="question"
-                placeholder="Ask your question..."
-            >
-
-            <button onclick="askQuestion()">Send</button>
-        </div>
+                    <button
+                        id="send-btn"
+                        onclick="askQuestion()"
+                        class="btn btn-circle btn-primary btn-sm h-8 w-8 min-h-8 shadow-sm transition-all duration-200 disabled:opacity-30 disabled:bg-base-300 disabled:text-base-content/40"
+                        title="Send message"
+                        disabled
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+                            <path fill-rule="evenodd" d="M10 17a.75.75 0 0 1-.75-.75V5.612L5.29 9.77a.75.75 0 0 1-1.08-1.04l5.25-5.5a.75.75 0 0 1 1.08 0l5.25 5.5a.75.75 0 1 1-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0 1 10 17Z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="text-center text-[11px] text-base-content/40 mt-2">
+                Powered by Kie.ai &bull; Zepto Support AI &bull; Instant Knowledge Grounding
+            </div>
+        </footer>
 
     </div>
 
-   <script>
-
-    async function askQuestion() {
-
+    <script>
         const input = document.getElementById("question");
         const chatBox = document.getElementById("chat-box");
+        const btn = document.getElementById("send-btn");
+        const welcomeCard = document.getElementById("welcome-card");
 
-        const question = input.value.trim();
-
-        if (question === "") {
-            return;
+        function getTimeString() {
+            const now = new Date();
+            return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
 
-        // Show user's question
-        chatBox.innerHTML += `
-            <div class="message user">
-                <b>You:</b> ${question}
-            </div>
-        `;
-
-        input.value = "";
-
-        // Show loading message
-        const loading = document.createElement("div");
-        loading.className = "message bot";
-        loading.innerHTML = "<b>Assistant:</b> Thinking...";
-        chatBox.appendChild(loading);
-
-        try {
-
-            // Send question to Flask
-            const response = await fetch("/ask", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    question: question
-                })
-            });
-
-            const data = await response.json();
-
-            // Replace Thinking with actual answer
-            loading.innerHTML = `
-                <b>Assistant:</b> ${data.answer}
-            `;
-
-        } catch (error) {
-
-            loading.innerHTML = `
-                <b>Assistant:</b> Sorry, something went wrong.
-            `;
-
-            console.error(error);
+        function escapeHtml(str) {
+            const div = document.createElement("div");
+            div.appendChild(document.createTextNode(str));
+            return div.innerHTML;
         }
-    }
 
+        function renderMarkdown(content) {
+            if (typeof marked !== "undefined" && marked.parse) {
+                try {
+                    return marked.parse(content);
+                } catch (e) {
+                    console.warn("Markdown parse error:", e);
+                }
+            }
+            let html = escapeHtml(content);
+            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            html = html.replace(/\n/g, '<br>');
+            return html;
+        }
 
-    // Press Enter to send
-    document.getElementById("question").addEventListener("keydown", function(event) {
+        function updateSendButton() {
+            const hasText = input.value.trim().length > 0;
+            btn.disabled = !hasText;
+        }
 
-        if (event.key === "Enter") {
+        function handleQuickPrompt(text) {
+            input.value = text;
+            input.style.height = "auto";
+            updateSendButton();
             askQuestion();
         }
 
-    });
+        function clearChat() {
+            chatBox.innerHTML = "";
+            if (welcomeCard) {
+                chatBox.appendChild(welcomeCard);
+            }
+            input.value = "";
+            input.style.height = "auto";
+            updateSendButton();
+            input.focus();
+        }
 
-</script>
+        async function askQuestion() {
+            const question = input.value.trim();
+            if (!question) return;
+
+            // Remove welcome card on first message
+            if (welcomeCard && welcomeCard.parentElement === chatBox) {
+                welcomeCard.remove();
+            }
+
+            // Disable controls while request in flight
+            btn.disabled = true;
+            input.disabled = true;
+
+            const time = getTimeString();
+
+            // Append User Message using daisyUI chat-end
+            const userMsgEl = document.createElement("div");
+            userMsgEl.className = "chat chat-end animate-fadeIn";
+            userMsgEl.innerHTML = `
+                <div class="chat-image avatar placeholder">
+                    <div class="w-8 h-8 rounded-full bg-neutral text-neutral-content flex items-center justify-center text-xs font-bold">
+                        👤
+                    </div>
+                </div>
+                <div class="chat-header text-xs text-base-content/60 mb-1">
+                    You <time class="text-[10px] ml-1 opacity-75">${time}</time>
+                </div>
+                <div class="chat-bubble chat-bubble-primary shadow-sm text-sm break-words">
+                    ${escapeHtml(question)}
+                </div>
+            `;
+            chatBox.appendChild(userMsgEl);
+            input.value = "";
+            input.style.height = "auto";
+            updateSendButton();
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Append Typing Loading Indicator using daisyUI chat-start
+            const loadingRow = document.createElement("div");
+            loadingRow.className = "chat chat-start animate-fadeIn";
+            loadingRow.id = "bot-loading";
+            loadingRow.innerHTML = `
+                <div class="chat-image avatar placeholder">
+                    <div class="w-8 h-8 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold shadow-sm">
+                        ⚡
+                    </div>
+                </div>
+                <div class="chat-header text-xs text-base-content/60 mb-1">
+                    Zepto Assistant
+                </div>
+                <div class="chat-bubble bg-base-200 text-base-content py-3 shadow-sm">
+                    <span class="loading loading-dots loading-sm text-primary"></span>
+                </div>
+            `;
+            chatBox.appendChild(loadingRow);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            try {
+                const response = await fetch("/ask", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ question: question })
+                });
+
+                const data = await response.json().catch(() => ({}));
+                const responseText = data.answer || data.error || (response.ok ? "No response received." : `Server error (${response.status})`);
+
+                // Replace loading bubble with Bot response
+                loadingRow.innerHTML = `
+                    <div class="chat-image avatar placeholder">
+                        <div class="w-8 h-8 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold shadow-sm">
+                            ⚡
+                        </div>
+                    </div>
+                    <div class="chat-header text-xs text-base-content/60 mb-1">
+                        Zepto Assistant <time class="text-[10px] ml-1 opacity-75">${getTimeString()}</time>
+                    </div>
+                    <div class="chat-bubble bg-base-200 text-base-content shadow-sm text-sm break-words prose-content">
+                        ${renderMarkdown(responseText)}
+                    </div>
+                `;
+                chatBox.scrollTop = chatBox.scrollHeight;
+
+            } catch (error) {
+                loadingRow.innerHTML = `
+                    <div class="chat-image avatar placeholder">
+                        <div class="w-8 h-8 rounded-full bg-error text-error-content flex items-center justify-center text-xs font-bold">
+                            ⚠️
+                        </div>
+                    </div>
+                    <div class="chat-header text-xs text-error mb-1">
+                        Notice
+                    </div>
+                    <div class="chat-bubble chat-bubble-error shadow-sm text-sm">
+                        ${escapeHtml(error.message || "Failed to reach server. Please check your connection.")}
+                    </div>
+                `;
+                chatBox.scrollTop = chatBox.scrollHeight;
+                console.error(error);
+            } finally {
+                input.disabled = false;
+                updateSendButton();
+                input.focus();
+            }
+        }
+
+        // Auto-expand textarea on typing & update button state
+        input.addEventListener("input", function() {
+            this.style.height = "auto";
+            this.style.height = Math.min(this.scrollHeight, 120) + "px";
+            updateSendButton();
+        });
+
+        // Enter to send (Shift + Enter for new line)
+        input.addEventListener("keydown", function(event) {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                if (!btn.disabled) {
+                    askQuestion();
+                }
+            }
+        });
+
+        // Focus input on load
+        window.addEventListener("DOMContentLoaded", () => {
+            updateSendButton();
+            input.focus();
+        });
+    </script>
 </body>
 </html>

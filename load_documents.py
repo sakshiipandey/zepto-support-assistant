@@ -1,193 +1,67 @@
-from dotenv import load_dotenv
-from openai import OpenAI
 import os
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 import chromadb
 from pydantic import BaseModel
+from dotenv import load_dotenv
+import logging
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Load environment variables from .env
 load_dotenv()
 
-docs_path = "docs"
-
-# open and read documents from the docs folder and split them into chunks of 500 characters with an overlap of 50 characters
-
-files = os.listdir(docs_path)
-
-txt_files = []
-
-for file in files:
-    if file.endswith(".txt"):
-        txt_files.append(file)
-
-print("Number of documents:", len(txt_files))
-
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,
-    chunk_overlap=50
-)
-
-all_chunks = []
-
-for file in txt_files:
-    file_path = os.path.join(docs_path, file)
-
-    with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    chunks = text_splitter.split_text(content)
-
-    print("\n", file)
-    print("Number of chunks:", len(chunks))
-
-    for chunk in chunks:
-        all_chunks.append(chunk)
-
-        print(chunk)
-        print("----------------")
-
-print("\nTotal chunks:", len(all_chunks))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DOCS_PATH = os.getenv("DOCS_PATH", os.path.join(BASE_DIR, "docs"))
+CHROMA_PATH = os.path.join(BASE_DIR, "vector_store")
+COLLECTION_NAME = "support_docs"
+CHUNK_SIZE = 500
+CHUNK_OVERLAP = 50
 
 
-# Create embeddings for all chunks using the SentenceTransformer model
+def load_chunks(docs_path: str) -> list[str]:
+    """Read all .txt files and split into overlapping chunks."""
+    files = [f for f in os.listdir(docs_path) if f.endswith(".txt")]
+    logger.info("Found %d documents", len(files))
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+    )
 
-embeddings = model.encode(all_chunks)
+    all_chunks: list[str] = []
+    for file in sorted(files):
+        path = os.path.join(docs_path, file)
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        chunks = splitter.split_text(content)
+        logger.info("%s → %d chunks", file, len(chunks))
+        all_chunks.extend(chunks)
 
-print("Number of embeddings:", len(embeddings))
-print("Vector size:", len(embeddings[0]))
-
-
-# Store the embeddings in ChromaDB
-
-client = chromadb.PersistentClient(path="vector_store")
-
-collection = client.get_or_create_collection(
-    name="support_docs"
-)
-
-ids = []
-documents = []
-metadatas = []
-
-for i, chunk in enumerate(all_chunks):
-    ids.append(str(i))
-    documents.append(chunk)
-    metadatas.append({
-        "source": "support_docs"
-    })
-
-collection.add(
-    ids=ids,
-    documents=documents,
-    embeddings=embeddings.tolist(),
-    metadatas=metadatas
-)
-
-print("Data stored in ChromaDB")
-print("Total documents in collection:", collection.count())
+    logger.info("Total chunks: %d", len(all_chunks))
+    return all_chunks
 
 
-# Query the collection for relevant chunks based on a user question
+def embed_and_store(chunks: list[str]) -> None:
+    """Encode chunks and persist to ChromaDB using upsert for idempotency."""
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+    embeddings = model.encode(chunks)
+    logger.info("Embeddings shape: %s", embeddings.shape)
 
-question = "What is the delivery time?"
+    client = chromadb.PersistentClient(path=CHROMA_PATH)
+    collection = client.get_or_create_collection(name=COLLECTION_NAME)
 
-question_embedding = model.encode([question])
+    ids = [str(i) for i in range(len(chunks))]
+    metadatas = [{"source": "support_docs"} for _ in chunks]
 
-results = collection.query(
-    query_embeddings=question_embedding.tolist(),
-    n_results=3
-)
-
-print("\nTop 3 relevant chunks:\n")
-
-for i, chunk in enumerate(results["documents"][0]):
-    print("Result", i + 1)
-    print(chunk)
-    print("----------------")
-
-
-# chunks into single context string with two new lines between each chunk
-
-context = "\n\n".join(results["documents"][0])
-
-print("\nContext:\n")
-print(context)
-
-
-# prompt for the LLM to answer the user question based on the context
-
-prompt = f"""
-ROLE:
-You are a helpful customer support assistant for Zepto.
-
-CONTEXT:
-{context}
-
-TASK:
-Answer the user's question using only the information provided in the context.
-
-FORMAT:
-Give a clear and simple answer.
-
-LENGTH:
-Keep the answer short, around 2-4 sentences.
-
-CONSTRAINT:
-Do not invent information that is not present in the context.
-
-FEW-SHOT EXAMPLE:
-
-Question:
-What should I do if my order contains a damaged item?
-
-Answer:
-You should report the damaged item to customer support according to the damaged item policy.
-
-USER QUESTION:
-{question}
-"""
-
-print("\nPrompt:\n")
-print(prompt)
-
-
-# Connect to KIE AI's OpenAI-compatible API
-
-api_key = os.getenv("OPENAI_API_KEY")
-
-if not api_key:
-    print("\nERROR: OPENAI_API_KEY was not found in .env")
-    exit()
-
-client = OpenAI(
-    api_key=api_key,
-    base_url="https://api.kie.ai/gpt-5-2/v1"
-)
-
-
-# Send the prompt to the LLM
-
-response = client.chat.completions.create(
-    model="gpt-5-2",
-    messages=[
-        {
-            "role": "user",
-            "content": prompt
-        }
-    ]
-)
-
-
-# Get the final answer from the LLM
-
-answer = response.choices[0].message.content
-
-print("\nFinal Answer:\n")
-print(answer)
+    # upsert ensures running this multiple times does not raise IDAlreadyExistsException
+    collection.upsert(
+        ids=ids,
+        documents=chunks,
+        embeddings=embeddings.tolist(),
+        metadatas=metadatas,
+    )
+    logger.info("Stored %d documents in ChromaDB", collection.count())
 
 
 class SupportResponse(BaseModel):
@@ -196,12 +70,39 @@ class SupportResponse(BaseModel):
     source: str
 
 
-structured_response = SupportResponse(
-    question=question,
-    answer=answer,
-    source="ChromaDB"
-)
+if __name__ == "__main__":
+    chunks = load_chunks(DOCS_PATH)
+    embed_and_store(chunks)
 
-print("\nStructured Response:\n")
-print(structured_response)
+    # One-off demo query (kept for reference)
+    api_key = os.getenv("KIE_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if api_key:
+        try:
+            from openai import OpenAI
+            client = OpenAI(
+                api_key=api_key,
+                base_url=os.getenv("OPENAI_BASE_URL", "https://api.kie.ai/gpt-5-2/v1"),
+            )
+            question = "What is the delivery time?"
+            resp = client.chat.completions.create(
+                model=os.getenv("LLM_MODEL", "gpt-5-2"),
+                messages=[{"role": "user", "content": question}],
+            )
+            choices = getattr(resp, "choices", None)
+            if choices and choices[0].message.content:
+                answer = choices[0].message.content
+            else:
+                msg = getattr(resp, "msg", "No choices returned")
+                answer = f"Kie.ai notice: {msg}"
+
+            result = SupportResponse(
+                question=question,
+                answer=answer,
+                source="ChromaDB",
+            )
+            logger.info("Demo response: %s", result)
+        except Exception as err:
+            logger.warning("Demo query failed: %s", err)
+    else:
+        logger.warning("API key not set — skipping demo query")
 

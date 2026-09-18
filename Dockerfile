@@ -1,15 +1,21 @@
-FROM python:3.13-slim
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Compile Python bytecode for faster startup
+ENV UV_COMPILE_BYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
 
-RUN pip install --no-cache-dir -r requirements.txt
+# Install exact pinned dependencies from uv.lock
+RUN uv sync --frozen --no-install-project
 
+# Copy project files
 COPY . .
 
 EXPOSE 5000
 
-CMD ["python", "app.py"]
+# Start Flask application using uv
+CMD ["uv", "run", "python", "app.py"]
